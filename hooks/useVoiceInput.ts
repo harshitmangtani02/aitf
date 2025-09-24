@@ -23,7 +23,7 @@ export function useVoiceInput({
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState('');
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     // Check if SpeechRecognition is supported
@@ -49,7 +49,7 @@ export function useVoiceInput({
         setTranscript('');
       };
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
+      recognition.onresult = (event: any) => {
         console.log('Speech recognition result received');
         let finalTranscript = '';
         let interimTranscript = '';
@@ -73,7 +73,7 @@ export function useVoiceInput({
         }
       };
 
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      recognition.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
         const errorMessage = language === 'en'
           ? `Speech recognition error: ${event.error}`
