@@ -17,10 +17,10 @@ A bilingual chatbot that combines weather data with AI-powered fashion and trave
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: Next.js 15, React 19, TypeScript
+- **Frontend**: Next.js 15, TypeScript
 - **UI Components**: shadcn/ui, Tailwind CSS
 - **AI Integration**: AI SDK with OpenAI GPT-3.5-turbo
-- **Weather API**: OpenWeatherMap
+- **Weather API**: Open-Meteo
 - **Voice Input**: Web Speech API (supports both English and Japanese)
 - **Internationalization**: Custom React Context with localStorage persistence
 - **Styling**: Custom design system with CSS variables and animations
@@ -46,7 +46,6 @@ cp .env.example .env.local
 ```
 
 Required API keys:
-- **OpenWeather API Key**: Get from [OpenWeatherMap](https://openweathermap.org/api) (free tier available)
 - **OpenAI API Key**: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
 
 ### 4. Run the development server
