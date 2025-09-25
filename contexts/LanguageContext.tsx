@@ -33,7 +33,7 @@ const translations = {
     windSpeed: '💨 Wind Speed',
 
     // Chat
-    assistantTitle: 'Fashion & Travel Assistant',
+    assistantTitle: 'Weather Assistant',
     assistantDescription: '🎯 AI-powered fashion and travel suggestions based on weather',
     welcomeTitle: 'Hello!',
     welcomeMessage: "Let's get started via Voice/Text input whenever you're ready!!",
@@ -73,7 +73,7 @@ const translations = {
     windSpeed: '💨 風速',
 
     // Chat
-    assistantTitle: 'ファッション・旅行アシスタント',
+    assistantTitle: '天気アシスタント',
     assistantDescription: '🎯 天気に基づいたファッションと旅行の提案をします',
     welcomeTitle: 'こんにちは！',
     welcomeMessage: '準備ができたら、音声/テキスト入力で始めましょう！！',
