@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { useChat } from '@ai-sdk/react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +21,15 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new messages are added
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isLoading]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
@@ -133,12 +141,20 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
     isListening,
     isSupported,
     error: voiceError,
+    transcript,
     startListening,
     stopListening
   } = useVoiceInput({
     onResult: onVoiceResult,
     language: language
   });
+
+  // Update input value with real-time transcript
+  useEffect(() => {
+    if (isListening && transcript) {
+      setInputValue(transcript);
+    }
+  }, [transcript, isListening]);
 
 
   const handleVoiceToggle = () => {
@@ -212,75 +228,76 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
             </div>
             {t('assistantTitle')}
           </CardTitle>
-          <CardDescription className="text-base">
-            {t('assistantDescription')}
-          </CardDescription>
         </CardHeader>
-        <CardContent className="p-6">
-          <div className="space-y-4 min-h-[400px] max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-primary/20">
+        <CardContent className="p-0">
+          <div
+            ref={chatContainerRef}
+            className="space-y-6 min-h-[500px] max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300/50 dark:scrollbar-thumb-gray-600/50 p-6"
+          >
             {messages.length === 0 && (
-              <div className="text-center text-muted-foreground py-12">
-                <div className="animate-bounce mb-4">
-                  <span className="text-6xl">👋</span>
+              <div className="text-center text-muted-foreground py-16">
+                <div className="animate-bounce mb-6">
+                  <span className="text-8xl">👋</span>
                 </div>
-                <h3 className="text-xl font-semibold mb-4 text-foreground">{t('welcomeTitle')}</h3>
-                <p className="text-lg mb-6">{t('welcomeMessage')}</p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <span className="px-3 py-1 bg-primary/10 rounded-full text-sm">{t('exampleQueries.weather')}</span>
-                  <span className="px-3 py-1 bg-secondary/10 rounded-full text-sm">{t('exampleQueries.fashion')}</span>
-                  <span className="px-3 py-1 bg-accent/10 rounded-full text-sm">{t('exampleQueries.travel')}</span>
+                <h3 className="text-2xl font-semibold mb-6 text-foreground">{t('welcomeTitle')}</h3>
+                <p className="text-lg mb-8 max-w-md mx-auto">{t('welcomeMessage')}</p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <span className="px-4 py-2 bg-white/30 dark:bg-white/10 backdrop-blur-sm border border-white/20 dark:border-white/10 rounded-full text-sm font-medium shadow-lg">{t('exampleQueries.weather')}</span>
+                  <span className="px-4 py-2 bg-white/30 dark:bg-white/10 backdrop-blur-sm border border-white/20 dark:border-white/10 rounded-full text-sm font-medium shadow-lg">{t('exampleQueries.fashion')}</span>
+                  <span className="px-4 py-2 bg-white/30 dark:bg-white/10 backdrop-blur-sm border border-white/20 dark:border-white/10 rounded-full text-sm font-medium shadow-lg">{t('exampleQueries.travel')}</span>
                 </div>
               </div>
             )}
             {messages.map((message, index) => (
               <div
                 key={message.id}
-                className={`transform transition-all duration-300 ease-out ${message.role === 'user'
-                  ? 'translate-x-0 opacity-100'
-                  : 'translate-x-0 opacity-100'
-                  }`}
-                style={{ animationDelay: `${index * 100}ms` }}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}
+                style={{ animationDelay: `${index * 50}ms` }}
               >
                 <div
-                  className={`p-4 rounded-xl shadow-sm ${message.role === 'user'
-                    ? 'bg-primary text-primary-foreground ml-12 rounded-br-sm'
-                    : 'bg-card border mr-12 rounded-bl-sm'
-                    }`}
+                  className={`max-w-[80%] ${message.role === 'user'
+                    ? 'bg-primary/20 backdrop-blur-sm border border-primary/30 shadow-lg shadow-primary/20'
+                    : 'bg-white/20 dark:bg-white/10 backdrop-blur-sm border border-white/20 dark:border-white/10 shadow-lg'
+                    } rounded-2xl p-5`}
+                  style={message.role === 'user' ? { color: 'var(--foreground)' } : {}}
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 mt-1">
+                    <div className="flex-shrink-0">
                       {message.role === 'user' ? (
-                        <div className="w-6 h-6 bg-primary-foreground/20 rounded-full flex items-center justify-center">
-                          <span className="text-xs">👤</span>
+                        <div className="w-8 h-8 bg-primary-foreground/20 rounded-full flex items-center justify-center shadow-inner">
+                          <span className="text-sm">👤</span>
                         </div>
                       ) : (
-                        <div className="w-6 h-6 bg-primary/20 rounded-full flex items-center justify-center">
-                          <span className="text-xs">🤖</span>
+                        <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center shadow-inner">
+                          <span className="text-sm">🤖</span>
                         </div>
                       )}
                     </div>
-                    <div className="whitespace-pre-wrap flex-1">{message.content}</div>
+                    <div className="whitespace-pre-wrap flex-1 leading-relaxed">{message.content}</div>
                   </div>
                 </div>
               </div>
             ))}
             {isLoading && (
-              <div className="bg-card border p-4 rounded-xl mr-12 rounded-bl-sm animate-pulse">
-                <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 bg-primary/20 rounded-full flex items-center justify-center">
-                    <span className="text-xs">🤖</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              <div className="flex justify-start animate-in slide-in-from-bottom-2 duration-300">
+                <div className="bg-white/20 dark:bg-white/10 backdrop-blur-sm border border-white/20 dark:border-white/10 shadow-lg rounded-2xl p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center shadow-inner">
+                      <span className="text-sm">🤖</span>
                     </div>
-                    <span className="text-muted-foreground">{t('thinking')}</span>
+                    <div className="flex items-center space-x-3">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      </div>
+                      <span className="text-muted-foreground font-medium">{t('thinking')}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
         </CardContent>
       </Card>
@@ -288,21 +305,22 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
       {/* Input Form */}
       <Card className="glass shadow-xl border-accent/20 sticky bottom-4">
         <CardContent className="p-6">
-          <form onSubmit={handleSubmit} className="flex gap-3">
+          <form onSubmit={handleSubmit} className="flex gap-4">
             <div className="flex-1 relative">
               <Input
                 value={inputValue}
                 onChange={handleInputChange}
                 placeholder={t('inputPlaceholder')}
                 disabled={isLoading || isLoadingWeather}
-                className="pr-12 h-12 text-base border-primary/20 focus:border-primary/50 focus:ring-primary/20"
+                className="h-14 text-base bg-white/20 dark:bg-white/10 backdrop-blur-sm border border-white/30 dark:border-white/20 shadow-inner focus:shadow-lg focus:ring-2 focus:ring-primary/50 transition-all duration-200 pr-16"
               />
               {isListening && (
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
                   <div className="flex space-x-1">
-                    <div className="w-1 h-4 bg-primary rounded animate-pulse"></div>
-                    <div className="w-1 h-6 bg-primary rounded animate-pulse" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-1 h-5 bg-primary rounded animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-1 h-4 bg-red-500 rounded animate-pulse"></div>
+                    <div className="w-1 h-6 bg-red-500 rounded animate-pulse" style={{ animationDelay: '0.1s' }}></div>
+                    <div className="w-1 h-5 bg-red-500 rounded animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-1 h-4 bg-red-500 rounded animate-pulse" style={{ animationDelay: '0.3s' }}></div>
                   </div>
                 </div>
               )}
@@ -315,15 +333,18 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
                 variant={isListening ? "destructive" : "outline"}
                 size="icon"
                 disabled={isLoading || isLoadingWeather}
-                className={`h-12 w-12 relative ${isListening ? 'animate-glow' : 'hover:scale-105'} transition-all duration-200`}
+                className={`h-14 w-14 relative shadow-lg ${isListening
+                  ? 'bg-red-500/80 hover:bg-red-600/80 backdrop-blur-sm border border-red-400/50 shadow-red-500/25 animate-pulse'
+                  : 'bg-white/20 dark:bg-white/10 backdrop-blur-sm border border-white/30 dark:border-white/20 hover:bg-white/30 dark:hover:bg-white/20 hover:scale-105'
+                  } transition-all duration-200`}
               >
                 {isListening ? (
-                  <MicOff className="w-5 h-5" />
+                  <MicOff className="w-6 h-6 text-white" />
                 ) : (
-                  <Mic className="w-5 h-5" />
+                  <Mic className="w-6 h-6" />
                 )}
                 {isListening && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full animate-ping"></div>
                 )}
               </Button>
             )}
@@ -332,38 +353,34 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
               type="submit"
               disabled={isLoading || isLoadingWeather || !inputValue?.trim()}
               size="icon"
-              className="h-12 w-12 hover:scale-105 transition-all duration-200"
-              onClick={() => {
-                console.log('Send button clicked');
-                console.log('Input value:', inputValue);
-                console.log('Input trimmed:', inputValue?.trim());
-                console.log('Button disabled:', isLoading || isLoadingWeather || !inputValue?.trim());
-              }}
+              className="h-14 w-14 bg-primary/80 hover:bg-primary/90 backdrop-blur-sm border border-primary/50 shadow-lg shadow-primary/25 hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100 text-primary-foreground"
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-6 h-6" />
             </Button>
           </form>
 
           {voiceError && (
-            <div className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-              <p className="text-sm text-destructive flex items-center gap-2">
-                <span>{t('voiceError')}</span>
-                {voiceError}
+            <div className="mt-4 p-4 bg-red-500/10 dark:bg-red-500/5 backdrop-blur-sm border border-red-500/20 rounded-xl shadow-inner">
+              <p className="text-sm text-red-600 dark:text-red-400 flex items-center gap-2 font-medium">
+                <span>⚠️</span>
+                <span>{t('voiceError')}: {voiceError}</span>
               </p>
             </div>
           )}
 
           {!isSupported && (
-            <div className="mt-3 p-3 bg-muted/50 border border-muted rounded-lg">
-              <p className="text-sm text-muted-foreground flex items-center gap-2">
+            <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-500/5 backdrop-blur-sm border border-amber-500/20 rounded-xl shadow-inner">
+              <p className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-2 font-medium">
+                <span>ℹ️</span>
                 <span>{t('voiceNotSupported')}</span>
               </p>
             </div>
           )}
 
           {isListening && (
-            <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg animate-pulse">
-              <p className="text-sm text-primary flex items-center gap-2">
+            <div className="mt-4 p-4 bg-green-500/10 dark:bg-green-500/5 backdrop-blur-sm border border-green-500/20 rounded-xl shadow-inner animate-pulse">
+              <p className="text-sm text-green-600 dark:text-green-400 flex items-center gap-2 font-medium">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-ping"></span>
                 <span>{t('listening')}</span>
               </p>
             </div>

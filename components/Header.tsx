@@ -3,7 +3,7 @@
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { LanguageToggle } from '@/components/ui/language-toggle';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Mic, Cloud, Palette } from 'lucide-react';
+import { Mic, Cloud } from 'lucide-react';
 
 export function Header() {
   const { t } = useLanguage();
@@ -15,22 +15,22 @@ export function Header() {
           <div className="flex items-center space-x-2">
             <div className="relative">
               <Cloud className="h-8 w-8 text-primary animate-pulse" />
-              <Mic className="absolute -top-1 -right-1 h-4 w-4 text-secondary animate-bounce" />
+              <Mic className="absolute -top-1 -right-1 h-4 w-4 text-foreground animate-bounce" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-foreground">
                 {t('appTitle')}
               </h1>
-              <p className="text-sm text-muted-foreground">
+              {/* <p className="text-sm text-muted-foreground">
                 {t('appSubtitle')}
-              </p>
+              </p> */}
             </div>
           </div>
         </div>
 
         <div className="flex items-center space-x-4">
           <div className="hidden md:flex items-center space-x-2 text-sm text-muted-foreground">
-            <Palette className="h-4 w-4" />
+            {/* <Palette className="h-4 w-4" /> */}
             <span>{t('headerTagline')}</span>
           </div>
           <LanguageToggle />

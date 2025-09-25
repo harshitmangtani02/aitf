@@ -15,14 +15,14 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 const translations = {
   en: {
     // Header
-    appTitle: 'Weather Fashion Travel Chatbot',
+    appTitle: 'ATF Weather ChatBox',
     appSubtitle: 'Voice-Enabled AI Assistant',
-    headerTagline: 'Weather × Fashion × Travel',
+    headerTagline: 'Harshit Mangtani',
 
     // Hero
-    heroTagline: '🎯 AI × Weather × Fashion',
-    heroTitle: 'Intelligent Lifestyle Assistant',
-    heroSubtitle: 'Get weather updates and AI-powered fashion and travel recommendations through voice or text',
+    heroTagline: 'AI × Weather × Fashion',
+    heroTitle: 'Intelligent Weather Assistant',
+    heroSubtitle: 'Get weather updates with AI-powered fashion & travel recommendations through voice or text',
     voiceSupport: 'Voice Input Support',
     realTimeWeather: 'Real-time Weather',
     aiSuggestions: 'AI Recommendation Engine',
@@ -36,11 +36,11 @@ const translations = {
     assistantTitle: 'Fashion & Travel Assistant',
     assistantDescription: '🎯 AI-powered fashion and travel suggestions based on weather',
     welcomeTitle: 'Hello!',
-    welcomeMessage: 'I provide fashion and travel suggestions based on weather conditions',
+    welcomeMessage: "Let's get started via Voice/Text input whenever you're ready!!",
     exampleQueries: {
-      weather: '"Tell me the weather in Tokyo"',
-      fashion: '"What should I wear today?"',
-      travel: '"Rainy day travel plans"'
+      weather: 'Current Weather',
+      fashion: '7-day Forecasts',
+      travel: 'Past Statistics'
     },
     thinking: 'AI is thinking...',
 
@@ -57,11 +57,11 @@ const translations = {
     // Header
     appTitle: '天気ファッション・旅行チャットボット',
     appSubtitle: '音声対応 AI アシスタント',
-    headerTagline: '天気 × ファッション × 旅行',
+    headerTagline: 'ハーシット マングタニ',
 
     // Hero
-    heroTagline: '🎯 AI × 天気 × ファッション',
-    heroTitle: 'インテリジェント ライフスタイル アシスタント',
+    heroTagline: 'AI × 天気 × ファッション',
+    heroTitle: 'インテリジェントウェザーアシスタント',
     heroSubtitle: '音声で簡単に天気を確認し、AIがあなたにぴったりのファッションと旅行を提案します',
     voiceSupport: '日本語音声対応',
     realTimeWeather: 'リアルタイム天気',
@@ -76,11 +76,11 @@ const translations = {
     assistantTitle: 'ファッション・旅行アシスタント',
     assistantDescription: '🎯 天気に基づいたファッションと旅行の提案をします',
     welcomeTitle: 'こんにちは！',
-    welcomeMessage: '天気に応じたファッションや旅行の提案をします',
+    welcomeMessage: '準備ができたら、音声/テキスト入力で始めましょう！！',
     exampleQueries: {
-      weather: '「東京の天気を教えて」',
-      fashion: '「今日はどんな服を着ればいい？」',
-      travel: '「雨の日の旅行プラン」'
+      weather: '現在の天気',
+      fashion: '7日間予報',
+      travel: '過去の統計'
     },
     thinking: 'AIが考えています...',
 

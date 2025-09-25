@@ -153,6 +153,53 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Animated background bubbles visible in both light and dark mode */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -1;
+  background-image: 
+    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.15) 0%, transparent 50%);
+  animation: float 20s ease-in-out infinite;
+}
+
+.dark body::before {
+  background-image: 
+    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.08) 0%, transparent 50%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -1;
+  background-image: 
+    radial-gradient(circle at 60% 70%, rgba(34, 197, 94, 0.12) 0%, transparent 40%),
+    radial-gradient(circle at 90% 10%, rgba(168, 85, 247, 0.12) 0%, transparent 40%);
+  animation: float 25s ease-in-out infinite reverse;
+}
+
+.dark body::after {
+  background-image: 
+    radial-gradient(circle at 60% 70%, rgba(34, 197, 94, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 90% 10%, rgba(168, 85, 247, 0.06) 0%, transparent 40%);
 }
 
 /* Custom Animations */
@@ -193,10 +240,21 @@ body {
 
 @keyframes glow {
   0%, 100% {
-    box-shadow: 0 0 5px var(--primary), 0 0 10px var(--primary), 0 0 15px var(--primary);
+    box-shadow: 0 0 5px hsl(var(--primary)), 0 0 10px hsl(var(--primary)), 0 0 15px hsl(var(--primary));
   }
   50% {
-    box-shadow: 0 0 10px var(--primary), 0 0 20px var(--primary), 0 0 30px var(--primary);
+    box-shadow: 0 0 10px hsl(var(--primary)), 0 0 20px hsl(var(--primary)), 0 0 30px hsl(var(--primary));
+  }
+}
+
+@keyframes slide-in-from-bottom {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -222,6 +280,14 @@ body {
 
 .animate-glow {
   animation: glow 2s ease-in-out infinite alternate;
+}
+
+.animate-in {
+  animation: slide-in-from-bottom 0.3s ease-out;
+}
+
+.slide-in-from-bottom-2 {
+  animation: slide-in-from-bottom 0.3s ease-out;
 }
 
 /* Glassmorphism effect */
