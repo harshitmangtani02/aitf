@@ -7,7 +7,7 @@ A bilingual chatbot that combines weather data with AI-powered fashion and trave
 - 🌐 **Bilingual Support**: Complete English/Japanese language switching with instant UI translation
 - 🗣️ **Multi-Language Voice Input**: Japanese (`ja-JP`) and English (`en-US`) speech recognition
 - 🤖 **Language-Aware AI**: OpenAI GPT-3.5-turbo responds in the selected language without browser translation
-- 🌤️ **Weather Integration**: Real-time weather data from OpenWeatherMap API
+- 🌤️ **Weather Integration**: Real-time weather data from Open-Meteo API
 - 👗 **Fashion Suggestions**: AI-powered clothing recommendations based on weather
 - 🧳 **Travel Recommendations**: Travel activity suggestions considering weather conditions
 - 🎨 **Dynamic Modern UI**: Glassmorphism design with animations and theme switching
