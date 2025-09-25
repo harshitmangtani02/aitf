@@ -40,12 +40,12 @@ function updateSessionState(sessionId: string, updates: Partial<{
 }
 
 // First AI query: Extract city name and date from user query (conversational chatbot)
-async function analyzeQuery(query: string, language: string, sessionState: any): Promise<{
+async function analyzeQuery(query: string, language: string, sessionState: Record<string, any>): Promise<{
   needsWeatherData: boolean;
-  city?: string;
-  targetDate?: string;
-  dateType?: string;
-  chatResponse?: string;
+  city?: string | null;
+  targetDate?: string | null;
+  dateType?: string | null;
+  chatResponse?: string | null;
 }> {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
@@ -144,8 +144,8 @@ Response: {"needsWeatherData": false, "city": null, "targetDate": null, "dateTyp
   console.log('🤖 Raw AI response:', aiResponse);
 
   // Try to extract JSON from the response
-  let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-  let jsonStr = jsonMatch ? jsonMatch[0] : aiResponse;
+  const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+  const jsonStr = jsonMatch ? jsonMatch[0] : aiResponse;
 
   console.log('🔍 Extracted JSON string:', jsonStr);
 
@@ -153,16 +153,17 @@ Response: {"needsWeatherData": false, "city": null, "targetDate": null, "dateTyp
     const parsed = JSON.parse(jsonStr);
     console.log('✅ Successfully parsed JSON:', parsed);
     return parsed;
-  } catch (error) {
+  } catch (parseError) {
     console.error('❌ Failed to parse AI response as JSON');
     console.error('❌ Original response:', aiResponse);
-    
+    console.error('❌ Parse error:', parseError);
+
     // Fallback response
     return {
       needsWeatherData: false,
-      city: null,
-      targetDate: null,
-      dateType: null,
+      city: undefined,
+      targetDate: undefined,
+      dateType: undefined,
       chatResponse: language === 'ja'
         ? 'すみません、よく理解できませんでした。😅 どちらの都市の天気をお知りになりたいですか？'
         : 'I\'m not quite sure what you\'re looking for! 😅 Which city\'s weather would you like to know about?'
@@ -178,7 +179,7 @@ async function getCoordinates(cityName: string): Promise<{
   fullName: string;
 }> {
   console.log('🌍 Getting coordinates for city:', cityName);
-  
+
   const geoResponse = await fetch(
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=en&format=json`
   );
@@ -194,7 +195,7 @@ async function getCoordinates(cityName: string): Promise<{
   }
 
   const location = geoData.results[0];
-  
+
   console.log('📍 Found coordinates:', {
     city: location.name,
     country: location.country,
@@ -211,9 +212,9 @@ async function getCoordinates(cityName: string): Promise<{
 }
 
 // Get weather data from Open-Meteo API
-async function getWeatherData(city: string, latitude: number, longitude: number, targetDate?: string, dateType?: string): Promise<any> {
+async function getWeatherData(city: string, latitude: number, longitude: number, targetDate?: string, dateType?: string): Promise<Record<string, any>> {
   console.log('🌤️ Fetching weather data for:', city, 'at', latitude, longitude);
-  
+
   let url: string;
   let params: URLSearchParams;
 
@@ -254,7 +255,7 @@ async function getWeatherData(city: string, latitude: number, longitude: number,
   }
 
   const data = await response.json();
-  
+
   // Process the weather data
   if (dateType === 'historical' || dateType === 'forecast') {
     const daily = data.daily;
@@ -304,7 +305,7 @@ async function getWeatherData(city: string, latitude: number, longitude: number,
 }
 
 // Second AI query: Format weather response with fashion and travel advice (conversational)
-async function formatWeatherResponse(weatherData: any, originalQuery: string, language: string): Promise<string> {
+async function formatWeatherResponse(weatherData: Record<string, any>, originalQuery: string, language: string): Promise<string> {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not found');
@@ -368,15 +369,19 @@ Make it sound like a knowledgeable friend giving helpful advice about the weathe
 }
 
 export async function POST(req: NextRequest) {
+  let language = 'en'; // Default language
+
   try {
-    const { messages, language } = await req.json();
+    const requestBody = await req.json();
+    const { messages } = requestBody;
+    language = requestBody.language || 'en';
     const lastMessage = messages[messages.length - 1];
 
     if (!lastMessage || lastMessage.role !== 'user') {
       const welcomeMessage = language === 'ja'
         ? 'こんにちは！😊 天気アシスタントです。天気予報を確認したり、その日の服装を提案したり、旅行のアドバイスをしたりできます。どちらの都市の天気をお知りになりたいですか？'
         : 'Hello! 😊 I\'m your friendly weather assistant. I can check weather forecasts, suggest what to wear, and give travel advice. Which city\'s weather would you like to know about?';
-      
+
       return new NextResponse(welcomeMessage, {
         headers: { 'Content-Type': 'text/plain; charset=utf-8' }
       });
@@ -405,7 +410,7 @@ export async function POST(req: NextRequest) {
       const errorMessage = language === 'ja'
         ? 'どちらの都市の天気をお知りになりたいですか？🌍 例えば「東京の天気」や「デリーの天気」のように教えてください！'
         : 'Which city would you like to know the weather for? 🌍 You can say something like "weather in Tokyo" or "Delhi weather"!';
-      
+
       return new NextResponse(errorMessage, {
         headers: { 'Content-Type': 'text/plain; charset=utf-8' }
       });
@@ -434,8 +439,8 @@ export async function POST(req: NextRequest) {
       coordinates.fullName,
       coordinates.latitude,
       coordinates.longitude,
-      analysis.targetDate,
-      analysis.dateType
+      analysis.targetDate || undefined,
+      analysis.dateType || undefined
     );
 
     // Step 7: Format the response with conversational AI
@@ -453,11 +458,11 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('❌ Chat API error:', error);
-    
+
     const errorMessage = language === 'ja'
       ? 'すみません、エラーが発生しました。もう一度お試しください。'
       : 'Sorry, something went wrong. Please try again.';
-    
+
     return new NextResponse(errorMessage, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' }
     });
