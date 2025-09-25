@@ -97,33 +97,50 @@ const translations = {
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>('ja');
+  const [mounted, setMounted] = useState(false);
 
-  // Load saved language preference
+  // Load saved language preference after component mounts
   useEffect(() => {
-    const saved = localStorage.getItem('preferred-language') as Language;
-    if (saved && (saved === 'en' || saved === 'ja')) {
-      setLanguage(saved);
+    setMounted(true);
+    try {
+      const saved = localStorage.getItem('preferred-language') as Language;
+      if (saved && (saved === 'en' || saved === 'ja')) {
+        setLanguage(saved);
+      }
+    } catch (error) {
+      // Handle localStorage access errors gracefully
+      console.warn('Could not access localStorage:', error);
     }
   }, []);
 
-  // Save language preference
+  // Save language preference when it changes (only after mount)
   useEffect(() => {
-    localStorage.setItem('preferred-language', language);
-  }, [language]);
-
-  const t = (key: string) => {
-    const keys = key.split('.');
-    let value: any = translations[language];
-
-    for (const k of keys) {
-      value = value?.[k];
+    if (mounted) {
+      try {
+        localStorage.setItem('preferred-language', language);
+      } catch (error) {
+        console.warn('Could not save to localStorage:', error);
+      }
     }
+  }, [language, mounted]);
 
-    return value || key;
+  const contextValue = {
+    language,
+    setLanguage,
+    t: (key: string) => {
+      const keys = key.split('.');
+      let value: any = translations[language];
+
+      for (const k of keys) {
+        value = value?.[k];
+      }
+
+      return value || key;
+    }
   };
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={contextValue}>
       {children}
     </LanguageContext.Provider>
   );

@@ -128,8 +128,12 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
 
     if (locationMatch && locationMatch[1]) {
       const location = locationMatch[1].trim();
-      console.log('Fetching weather for:', location);
-      await fetchWeatherForLocation(location);
+      // Filter out common time words that might be captured in Japanese
+      const timeWords = ['今日', '明日', '昨日', 'today', 'tomorrow', 'yesterday'];
+      if (!timeWords.includes(location)) {
+        console.log('Fetching weather for:', location);
+        await fetchWeatherForLocation(location);
+      }
     }
 
     // Set the transcript as input

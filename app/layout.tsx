@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Barlow_Semi_Condensed } from "next/font/google";
-import { ThemeProvider } from "@/components/ui/theme-provider";
-import { LanguageProvider } from "@/contexts/LanguageContext";
+import { ClientProviders } from "@/components/ClientProviders";
 import "./globals.css";
 
 const barlowSemiCondensed = Barlow_Semi_Condensed({
@@ -25,16 +24,9 @@ export default function RootLayout({
       <body
         className={`${barlowSemiCondensed.variable} font-sans antialiased`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <LanguageProvider>
-            {children}
-          </LanguageProvider>
-        </ThemeProvider>
+        <ClientProviders>
+          {children}
+        </ClientProviders>
       </body>
     </html>
   );

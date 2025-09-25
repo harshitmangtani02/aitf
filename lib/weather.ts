@@ -152,7 +152,19 @@ export interface LocationRequest {
   dateType: 'current' | 'historical' | 'forecast';
 }
 
-export async function analyzeUserQuery(query: string, language: string = 'en', previousLocation: string | null = null, previousDate: { targetDate: string; dateType: 'historical' | 'forecast' } | null = null): Promise<LocationRequest> {
+interface ConversationState {
+  lastCity: string | null;
+  lastCountry: string | null;
+  lastDate: string | null;
+  lastDateType: string | null;
+}
+
+export async function analyzeUserQuery(
+  query: string, 
+  language: string = 'en', 
+  previousUserMessages: string[] = [], 
+  conversationState?: ConversationState
+): Promise<LocationRequest & { isWeatherQuery?: boolean; nonWeatherResponse?: string }> {
   const openaiApiKey = process.env.OPENAI_API_KEY;
 
   if (!openaiApiKey) {
@@ -161,8 +173,9 @@ export async function analyzeUserQuery(query: string, language: string = 'en', p
 
   console.log('🔍 Analyzing user query:', query);
   console.log('🌐 Query language:', language);
-  console.log('📍 Previous location context:', previousLocation);
-  console.log('📅 Previous date context:', previousDate);
+  console.log('📍 Previous user messages:', previousUserMessages);
+  console.log('🏙️ Conversation state:', conversationState);
+  console.log('🔍 Previous messages formatted:\n', previousUserMessages.map((msg, index) => `${index + 1}. ${msg}`).join('\n'));
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -176,15 +189,27 @@ export async function analyzeUserQuery(query: string, language: string = 'en', p
         messages: [
           {
             role: 'system',
-            content: `You are a multilingual location and time analyzer. Analyze the user's query (in ${language === 'ja' ? 'Japanese' : 'English'}) and extract location and date information.
+            content: `You are an intelligent weather assistant. Analyze the user's query and determine:
 
-${previousLocation ? `IMPORTANT LOCATION CONTEXT: The user previously mentioned "${previousLocation}" as a location. If the current query only mentions time/date without a specific location, use this previous location.` : ''}
+1. Is this a weather-related query? (weather, climate, temperature, travel advice, clothing recommendations, etc.)
+2. If yes, extract location and date information from the current query and conversation context.
 
-${previousDate ? `IMPORTANT DATE CONTEXT: The user previously mentioned "${previousDate.targetDate}" (${previousDate.dateType}). If the current query only mentions location without a specific date/time, use this previous date and dateType.` : ''}
+CONVERSATION CONTEXT:
+${previousUserMessages.length > 0 ? `Previous user messages:\n${previousUserMessages.map((msg, index) => `${index + 1}. ${msg}`).join('\n')}` : 'No previous context'}
+
+LAST WEATHER CONTEXT (from previous OpenAI responses):
+- Last City: ${conversationState?.lastCity || 'None'}
+- Last Country: ${conversationState?.lastCountry || 'None'}  
+- Last Date: ${conversationState?.lastDate || 'None'}
+- Last Date Type: ${conversationState?.lastDateType || 'None'}
+
+Current user query language: ${language === 'ja' ? 'Japanese' : 'English'}
 
 Return ONLY a JSON object with the following format:
 
 {
+  "isWeatherQuery": true/false,
+  "nonWeatherResponse": "polite response if not weather-related, in ${language === 'ja' ? 'Japanese' : 'English'} or null",
   "city": "City Name or null",
   "country": "Country Name or null", 
   "latitude": 0.0,
@@ -197,110 +222,47 @@ Return ONLY a JSON object with the following format:
   "errorMessage": "user-friendly message in ${language === 'ja' ? 'Japanese' : 'English'} or null"
 }
 
-CURRENT DATE: ${new Date().toISOString().split('T')[0]} (Use this as TODAY's date for relative date calculations)
+CRITICAL INSTRUCTIONS:
 
-DYNAMIC DATE CALCULATION HELPER:
-const today = new Date();
-const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-const dayBeforeYesterday = new Date(today); dayBeforeYesterday.setDate(today.getDate() - 2);
-const dayAfterTomorrow = new Date(today); dayAfterTomorrow.setDate(today.getDate() + 2);
+1. **Weather Query Detection**: 
+   - Weather-related: weather, climate, temperature, rain, snow, wind, sunny, cloudy, humidity, forecast, conditions, travel advice, clothing recommendations, what to wear, etc.
+   - Follow-up queries: "how about tomorrow", "what about 2 October", "明日はどう", "10月1日は", "How about October 1st?", etc.
+   - If NOT weather-related: set isWeatherQuery: false and provide polite response
 
-Use these calculations to determine the exact dates for relative terms.
+2. **Location Extraction - USE PERSISTENT STATE**:
+   - FIRST: Look for locations in current query
+   - IF NO LOCATION in current query: Use the "Last City" from the LAST WEATHER CONTEXT above
+   - The "Last City" is the most recent city returned by OpenAI in previous responses
+   - EXAMPLE: If Last City is "Delhi" and current query is "How about October 1st?", use "Delhi"
+   - Use approximate coordinates for major cities (Tokyo: 35.6762, 139.6503; Delhi: 28.6139, 77.2090; London: 51.5074, -0.1278; etc.)
+   - ONLY set city to null if NO location is found in current query AND Last City is "None"
 
-Date Analysis Rules (${language === 'ja' ? 'Japanese' : 'English'}):
-IMPORTANT: Calculate dates dynamically based on TODAY's date!
+3. **Date Processing**:
+   - Current date: ${new Date().toISOString().split('T')[0]}
+   - "today/今日" -> dateType: "current", targetDate: null
+   - "tomorrow/明日" -> dateType: "forecast", targetDate: tomorrow's date  
+   - "yesterday/昨日" -> dateType: "historical", targetDate: yesterday's date
+   - "October 1st", "Oct 1", "1st October", "10月1日" -> use 2025 as year, determine historical/forecast based on current date
+   - If no date mentioned and Last Date exists, use Last Date and Last Date Type from LAST WEATHER CONTEXT
+   - If no date mentioned and no Last Date, default to "current"
 
-CRITICAL RULES:
-1. If ONLY location is mentioned (no date/time) AND no previous date context: use dateType: "current", targetDate: null
-2. If ONLY location is mentioned (no date/time) AND previous date exists: use the previous date and dateType
-3. If ONLY date is mentioned (no location) AND previous location exists: use previous location
-4. For specific dates like "10th October", "December 25th", assume CURRENT YEAR (2025) unless specified otherwise
-5. Compare the target date with today's date to determine if it's "historical" (past) or "forecast" (future)
-6. FORECAST LIMIT: Weather forecasts are only available up to 16 days in the future. If a date is more than 16 days from today, return an error.
+4. **Major City Coordinates** (use these exact values):
+   - Tokyo: {"latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo"}
+   - Delhi: {"latitude": 28.6139, "longitude": 77.2090, "timezone": "Asia/Kolkata"}
+   - London: {"latitude": 51.5074, "longitude": -0.1278, "timezone": "Europe/London"}
+   - New York: {"latitude": 40.7128, "longitude": -74.0060, "timezone": "America/New_York"}
+   - Paris: {"latitude": 48.8566, "longitude": 2.3522, "timezone": "Europe/Paris"}
 
-${language === 'ja' ? `
-- "今日", "本日", "現在" -> dateType: "current", targetDate: null
-- "昨日", "きのう" -> dateType: "historical", targetDate: [TODAY - 1 day]
-- "明日", "あした", "あす" -> dateType: "forecast", targetDate: [TODAY + 1 day]  
-- "一昨日", "おととい" -> dateType: "historical", targetDate: [TODAY - 2 days]
-- "明後日", "あさって" -> dateType: "forecast", targetDate: [TODAY + 2 days]
-- "10月10日", "12月25日" -> Use 2025 as year, determine if historical/forecast based on current date
-- Location only (no date) -> dateType: "current", targetDate: null
-- Date only (no location) -> Use previous location if available
-` : `
-- "today", "now", "current" -> dateType: "current", targetDate: null
-- "yesterday" -> dateType: "historical", targetDate: [TODAY - 1 day]
-- "tomorrow" -> dateType: "forecast", targetDate: [TODAY + 1 day]
-- "day before yesterday" -> dateType: "historical", targetDate: [TODAY - 2 days]  
-- "day after tomorrow" -> dateType: "forecast", targetDate: [TODAY + 2 days]
-- "10th October", "December 25th", "Oct 10" -> Use 2025 as year, determine if historical/forecast based on current date
-- Location only (no date) -> dateType: "current", targetDate: null
-- Date only (no location) -> Use previous location if available
-`}
+5. **Error Handling**:
+   - Missing location: provide helpful message asking for location
+   - Date too far in future (>16 days): provide forecast limit message
+   - Invalid queries: provide appropriate guidance
 
-CALCULATION EXAMPLES (today is ${new Date().toISOString().split('T')[0]}):
-- "yesterday" = "${new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0]}"
-- "tomorrow" = "${new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().split('T')[0]}"
-- "day before yesterday" = "${new Date(new Date().setDate(new Date().getDate() - 2)).toISOString().split('T')[0]}"
-- "day after tomorrow" = "${new Date(new Date().setDate(new Date().getDate() + 2)).toISOString().split('T')[0]}"
-- "10th October" = "2025-10-10" (assume current year 2025)
-- "December 25th" = "2025-12-25" (assume current year 2025)
-- "March 15" = "2025-03-15" (assume current year 2025)
-
-Location Rules:
-- If country mentioned instead of city, use the capital city
-- Use approximate coordinates for major cities
-- Use proper timezone identifiers (e.g., "America/New_York", "Asia/Tokyo")
-- If no location found AND no previous location context, set city to null and missingInfo to "location"
-- If previous location exists and current query has no location, use the previous location
-
-Missing Information Handling:
-- If location is missing AND no previous location: missingInfo: "location", errorMessage: "${language === 'ja' ? 'どちらの場所の天気を知りたいですか？' : 'Which location would you like to know the weather for?'}"
-- If time is ambiguous but location exists: missingInfo: "time", errorMessage: "${language === 'ja' ? 'いつの天気を知りたいですか？（今日、明日、昨日など）' : 'When would you like to know the weather for? (today, tomorrow, yesterday, etc.)'}"
-- If both clear: missingInfo: "none", errorMessage: null
-
-Examples with Previous Context:
-${previousLocation ? `
-LOCATION CONTEXT EXAMPLES:
-- Previous: "${previousLocation}", Current: "tomorrow" -> Use ${previousLocation} with tomorrow's date
-- Previous: "${previousLocation}", Current: "yesterday" -> Use ${previousLocation} with yesterday's date
-- Previous: "${previousLocation}", Current: "how about 10th October" -> Use ${previousLocation} with "2025-10-10"
-- Previous: "${previousLocation}", Current: "what about December 25th" -> Use ${previousLocation} with "2025-12-25"
-- Previous: "${previousLocation}", Current: "明日" -> Use ${previousLocation} with tomorrow's date
-- Previous: "${previousLocation}", Current: "10月10日はどう？" -> Use ${previousLocation} with "2025-10-10"
-` : ''}
-
-${previousDate ? `
-DATE CONTEXT EXAMPLES:
-- Previous date: "${previousDate.targetDate}" (${previousDate.dateType}), Current: "Paris" -> Use Paris with "${previousDate.targetDate}" and dateType: "${previousDate.dateType}"
-- Previous date: "${previousDate.targetDate}" (${previousDate.dateType}), Current: "Tokyo weather" -> Use Tokyo with "${previousDate.targetDate}" and dateType: "${previousDate.dateType}"
-- Previous date: "${previousDate.targetDate}" (${previousDate.dateType}), Current: "how about London" -> Use London with "${previousDate.targetDate}" and dateType: "${previousDate.dateType}"
-` : ''}
-
-SPECIFIC EXAMPLES:
-${language === 'ja' ? `
-- "東京の天気" (location only) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": null, "dateType": "current", "missingInfo": "none", "errorMessage": null}
-- "明日" (with previous location Tokyo) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-09-25", "dateType": "forecast", "missingInfo": "none", "errorMessage": null}
-- "10月10日はどう？" (with previous location Tokyo) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-10-10", "dateType": "forecast", "missingInfo": "none", "errorMessage": null}
-- "天気はどう？" -> {"city": null, "country": null, "latitude": null, "longitude": null, "timezone": null, "requestTime": "2025-09-24T12:00:00Z", "targetDate": null, "dateType": "current", "missingInfo": "location", "errorMessage": "どちらの場所の天気を知りたいですか？"}
-` : `
-- "weather in Tokyo" (location only) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": null, "dateType": "current", "missingInfo": "none", "errorMessage": null}
-- "tomorrow" (with previous location Tokyo) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-09-25", "dateType": "forecast", "missingInfo": "none", "errorMessage": null}
-- "how about 10th October" (with previous location Tokyo) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-10-10", "dateType": "forecast", "missingInfo": "none", "errorMessage": null}
-- "what's the weather like?" -> {"city": null, "country": null, "latitude": null, "longitude": null, "timezone": null, "requestTime": "2025-09-24T12:00:00Z", "targetDate": null, "dateType": "current", "missingInfo": "location", "errorMessage": "Which location would you like to know the weather for?"}
-`}
-ADDITIONAL EXAMPLES:
-- "weather in Tokyo today" -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": null, "dateType": "current"}
-- "Tokyo" (location only, no date, no previous date) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": null, "dateType": "current"}
-- "Tokyo" (location only, with previous date 2025-10-10 forecast) -> {"city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-10-10", "dateType": "forecast"}
-- "weather in Paris tomorrow" -> {"city": "Paris", "country": "France", "latitude": 48.8566, "longitude": 2.3522, "timezone": "Europe/Paris", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-09-25", "dateType": "forecast"}
-- "weather in London yesterday" -> {"city": "London", "country": "UK", "latitude": 51.5074, "longitude": -0.1278, "timezone": "Europe/London", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-09-23", "dateType": "historical"}
-- "weather in New York on December 25th" -> {"city": "New York", "country": "USA", "latitude": 40.7128, "longitude": -74.0060, "timezone": "America/New_York", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-12-25", "dateType": "forecast"}
-- "December 25th" (with previous location New York) -> {"city": "New York", "country": "USA", "latitude": 40.7128, "longitude": -74.0060, "timezone": "America/New_York", "requestTime": "2025-09-24T12:00:00Z", "targetDate": "2025-12-25", "dateType": "forecast"}
-
-FORECAST LIMIT VALIDATION:
-- If a forecast date is more than 16 days from today, return: {"missingInfo": "time", "errorMessage": "Weather forecasts are only available up to 16 days in the future. Please choose a date within the next 16 days."}`
+EXAMPLES:
+- "weather in Tokyo today" -> {"isWeatherQuery": true, "city": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503, "timezone": "Asia/Tokyo", "dateType": "current"}
+- "how about tomorrow" (with Last City: "Delhi") -> {"isWeatherQuery": true, "city": "Delhi", "country": "India", "latitude": 28.6139, "longitude": 77.2090, "timezone": "Asia/Kolkata", "dateType": "forecast", "targetDate": "2025-09-26"}
+- "How about October 1st?" (with Last City: "Delhi") -> {"isWeatherQuery": true, "city": "Delhi", "country": "India", "latitude": 28.6139, "longitude": 77.2090, "timezone": "Asia/Kolkata", "dateType": "forecast", "targetDate": "2025-10-01"}
+- "hello how are you" -> {"isWeatherQuery": false, "nonWeatherResponse": "Hello! I'm a weather assistant. Ask me about weather, climate, or travel advice."}`
           },
           {
             role: 'user',
@@ -405,17 +367,36 @@ export async function getWeatherFromOpenMeteo(locationRequest: LocationRequest):
   let params: URLSearchParams;
 
   if (locationRequest.dateType === 'historical' && locationRequest.targetDate) {
-    // Historical weather data
-    console.log('📜 Fetching historical weather data');
-    params = new URLSearchParams({
-      latitude: locationRequest.latitude.toString(),
-      longitude: locationRequest.longitude.toString(),
-      start_date: locationRequest.targetDate,
-      end_date: locationRequest.targetDate,
-      daily: 'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
-      timezone: 'auto'
-    });
-    url = `https://archive-api.open-meteo.com/v1/archive?${params.toString()}`;
+    // For recent dates (within last 7 days), try forecast API first as it has more reliable data
+    const targetDate = new Date(locationRequest.targetDate);
+    const today = new Date();
+    const daysDiff = Math.floor((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (daysDiff <= 7) {
+      // Use forecast API for recent historical data (more reliable)
+      console.log('📜 Fetching recent historical data via forecast API');
+      params = new URLSearchParams({
+        latitude: locationRequest.latitude.toString(),
+        longitude: locationRequest.longitude.toString(),
+        start_date: locationRequest.targetDate,
+        end_date: locationRequest.targetDate,
+        daily: 'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
+        timezone: 'auto'
+      });
+      url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
+    } else {
+      // Use archive API for older historical data
+      console.log('📜 Fetching historical weather data from archive');
+      params = new URLSearchParams({
+        latitude: locationRequest.latitude.toString(),
+        longitude: locationRequest.longitude.toString(),
+        start_date: locationRequest.targetDate,
+        end_date: locationRequest.targetDate,
+        daily: 'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
+        timezone: 'auto'
+      });
+      url = `https://archive-api.open-meteo.com/v1/archive?${params.toString()}`;
+    }
 
   } else if (locationRequest.dateType === 'forecast' && locationRequest.targetDate) {
     // Future forecast data
@@ -466,24 +447,115 @@ export async function getWeatherFromOpenMeteo(locationRequest: LocationRequest):
     }
 
     const dayIndex = 0; // First (and only) day since we query single date
-    weatherData = {
-      city: locationRequest.city,
-      latitude: locationRequest.latitude,
-      longitude: locationRequest.longitude,
-      timezone: data.timezone,
-      dateType: locationRequest.dateType,
-      targetDate: locationRequest.targetDate,
-      temperature: Math.round((daily.temperature_2m_max[dayIndex] + daily.temperature_2m_min[dayIndex]) / 2),
-      temperatureMax: Math.round(daily.temperature_2m_max[dayIndex]),
-      temperatureMin: Math.round(daily.temperature_2m_min[dayIndex]),
-      humidity: daily.relative_humidity_2m_max[dayIndex],
-      windSpeed: daily.wind_speed_10m_max[dayIndex],
-      precipitation: daily.precipitation_sum[dayIndex],
-      uvIndex: daily.uv_index_max[dayIndex],
-      weatherCode: daily.weather_code[dayIndex],
-      description: weatherCodeDescriptions[daily.weather_code[dayIndex]] || 'Unknown',
-      timestamp: daily.time[dayIndex]
-    };
+    
+    // Handle null values properly
+    const tempMax = daily.temperature_2m_max[dayIndex];
+    const tempMin = daily.temperature_2m_min[dayIndex];
+    const avgTemp = (tempMax !== null && tempMin !== null) ? Math.round((tempMax + tempMin) / 2) : null;
+    
+    // Check if we got null data and it's a recent date - try current weather as fallback
+    if (avgTemp === null && locationRequest.dateType === 'historical') {
+      const targetDate = new Date(locationRequest.targetDate!);
+      const today = new Date();
+      const daysDiff = Math.floor((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysDiff <= 1) { // If it's yesterday or today, try current weather
+        console.log('⚠️ No historical data available, trying current weather as fallback');
+        
+        const currentParams = new URLSearchParams({
+          latitude: locationRequest.latitude.toString(),
+          longitude: locationRequest.longitude.toString(),
+          current: 'temperature_2m,relative_humidity_2m,precipitation,cloud_cover,wind_speed_10m,uv_index,weather_code',
+          timezone: 'auto'
+        });
+        
+        const currentResponse = await fetch(`https://api.open-meteo.com/v1/forecast?${currentParams.toString()}`);
+        if (currentResponse.ok) {
+          const currentData = await currentResponse.json();
+          const current = currentData.current;
+          
+          weatherData = {
+            city: locationRequest.city,
+            latitude: locationRequest.latitude,
+            longitude: locationRequest.longitude,
+            timezone: currentData.timezone,
+            dateType: 'current', // Change to current since we're using current data
+            targetDate: null,
+            temperature: Math.round(current.temperature_2m),
+            temperatureMax: null,
+            temperatureMin: null,
+            humidity: current.relative_humidity_2m,
+            windSpeed: current.wind_speed_10m,
+            precipitation: current.precipitation,
+            cloudCover: current.cloud_cover,
+            uvIndex: current.uv_index,
+            weatherCode: current.weather_code,
+            description: weatherCodeDescriptions[current.weather_code] || 'Unknown',
+            timestamp: current.time
+          };
+        } else {
+          // If even current weather fails, return the null data with a note
+          weatherData = {
+            city: locationRequest.city,
+            latitude: locationRequest.latitude,
+            longitude: locationRequest.longitude,
+            timezone: data.timezone,
+            dateType: locationRequest.dateType,
+            targetDate: locationRequest.targetDate,
+            temperature: avgTemp,
+            temperatureMax: tempMax !== null ? Math.round(tempMax) : null,
+            temperatureMin: tempMin !== null ? Math.round(tempMin) : null,
+            humidity: daily.relative_humidity_2m_max[dayIndex],
+            windSpeed: daily.wind_speed_10m_max[dayIndex],
+            precipitation: daily.precipitation_sum[dayIndex],
+            uvIndex: daily.uv_index_max[dayIndex],
+            weatherCode: daily.weather_code[dayIndex],
+            description: 'Historical data not available for this date',
+            timestamp: daily.time[dayIndex]
+          };
+        }
+      } else {
+        // For older dates, just return the null data with explanation
+        weatherData = {
+          city: locationRequest.city,
+          latitude: locationRequest.latitude,
+          longitude: locationRequest.longitude,
+          timezone: data.timezone,
+          dateType: locationRequest.dateType,
+          targetDate: locationRequest.targetDate,
+          temperature: avgTemp,
+          temperatureMax: tempMax !== null ? Math.round(tempMax) : null,
+          temperatureMin: tempMin !== null ? Math.round(tempMin) : null,
+          humidity: daily.relative_humidity_2m_max[dayIndex],
+          windSpeed: daily.wind_speed_10m_max[dayIndex],
+          precipitation: daily.precipitation_sum[dayIndex],
+          uvIndex: daily.uv_index_max[dayIndex],
+          weatherCode: daily.weather_code[dayIndex],
+          description: 'Historical data not available for this date',
+          timestamp: daily.time[dayIndex]
+        };
+      }
+    } else {
+      // Normal case with valid data
+      weatherData = {
+        city: locationRequest.city,
+        latitude: locationRequest.latitude,
+        longitude: locationRequest.longitude,
+        timezone: data.timezone,
+        dateType: locationRequest.dateType,
+        targetDate: locationRequest.targetDate,
+        temperature: avgTemp,
+        temperatureMax: tempMax !== null ? Math.round(tempMax) : null,
+        temperatureMin: tempMin !== null ? Math.round(tempMin) : null,
+        humidity: daily.relative_humidity_2m_max[dayIndex],
+        windSpeed: daily.wind_speed_10m_max[dayIndex],
+        precipitation: daily.precipitation_sum[dayIndex],
+        uvIndex: daily.uv_index_max[dayIndex],
+        weatherCode: daily.weather_code[dayIndex],
+        description: daily.weather_code[dayIndex] !== null ? (weatherCodeDescriptions[daily.weather_code[dayIndex]] || 'Unknown') : 'No data available',
+        timestamp: daily.time[dayIndex]
+      };
+    }
   } else {
     // Handle current weather data
     const current = data.current;
