@@ -24,8 +24,7 @@ export function useVoiceInput({
   const [transcript, setTranscript] = useState('');
 
   const recognitionRef = useRef<any>(null);
-  const shouldRestartRef = useRef(false);
-  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Check if SpeechRecognition is supported
@@ -37,18 +36,13 @@ export function useVoiceInput({
       setIsSupported(true);
 
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;  // Allow continuous listening
-      recognition.interimResults = true;  // Get interim results
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      
+      // Configure for better Android experience
+      recognition.continuous = true;  // Keep continuous for all platforms
+      recognition.interimResults = true;  // Get interim results for real-time feedback
       recognition.lang = language === 'en' ? 'en-US' : 'ja-JP';
       recognition.maxAlternatives = 1;
-      
-      // Android-specific optimizations
-      const isAndroid = /Android/i.test(navigator.userAgent);
-      if (isAndroid) {
-        // On Android, use shorter timeout to prevent early stopping
-        recognition.continuous = false; // Android works better with non-continuous mode
-        recognition.interimResults = false; // Reduce processing overhead on mobile
-      }
 
       console.log('Setting up speech recognition for language:', recognition.lang);
 
@@ -77,20 +71,29 @@ export function useVoiceInput({
         console.log('Transcript:', currentTranscript);
         setTranscript(currentTranscript);
 
-        // Handle Android differently - it tends to give final results more quickly
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        if (isAndroid) {
-          // On Android, use any substantial transcript (final or interim)
-          if (currentTranscript.trim().length > 2) {
-            onResult(currentTranscript.trim());
-            recognition.stop();
-          }
-        } else {
-          // On other platforms, wait for final results
-          if (finalTranscript.trim()) {
-            onResult(finalTranscript.trim());
-            recognition.stop();
-          }
+        // Clear any existing silence timeout
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+
+        // If we have a final result, process it immediately
+        if (finalTranscript.trim()) {
+          console.log('Final transcript received:', finalTranscript);
+          onResult(finalTranscript.trim());
+          recognition.stop();
+        } else if (currentTranscript.trim()) {
+          // For interim results, set a timeout to wait for more speech
+          // Longer timeout on Android to account for processing delays
+          const timeoutDuration = isAndroid ? 3000 : 2000;
+          
+          silenceTimeoutRef.current = setTimeout(() => {
+            if (currentTranscript.trim()) {
+              console.log('Timeout reached, using interim transcript:', currentTranscript);
+              onResult(currentTranscript.trim());
+              recognition.stop();
+            }
+          }, timeoutDuration);
         }
       };
 
@@ -106,31 +109,19 @@ export function useVoiceInput({
       recognition.onend = () => {
         console.log('Speech recognition ended');
         
-        // On Android, if we have a transcript but no final result was processed, use it
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        if (isAndroid && transcript.trim() && transcript.trim().length > 2) {
-          console.log('Android: Using transcript from onend:', transcript);
-          onResult(transcript.trim());
-          setIsListening(false);
-          shouldRestartRef.current = false;
-        } else if (shouldRestartRef.current && isAndroid) {
-          // Restart recognition on Android to continue listening
-          console.log('Android: Restarting recognition for continuous listening');
-          restartTimeoutRef.current = setTimeout(() => {
-            if (shouldRestartRef.current && recognitionRef.current) {
-              try {
-                recognitionRef.current.start();
-              } catch (err) {
-                console.error('Failed to restart recognition:', err);
-                setIsListening(false);
-                shouldRestartRef.current = false;
-              }
-            }
-          }, 100);
-        } else {
-          setIsListening(false);
-          shouldRestartRef.current = false;
+        // Clear any pending silence timeout
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
         }
+        
+        // If we have a transcript that hasn't been processed yet, use it
+        if (transcript.trim() && transcript.trim().length > 2) {
+          console.log('Using final transcript from onend:', transcript);
+          onResult(transcript.trim());
+        }
+        
+        setIsListening(false);
       };
 
       recognitionRef.current = recognition;
@@ -143,9 +134,8 @@ export function useVoiceInput({
     }
 
     return () => {
-      shouldRestartRef.current = false;
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current);
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
       }
       if (recognitionRef.current) {
         recognitionRef.current.abort();
@@ -173,13 +163,15 @@ export function useVoiceInput({
 
     if (recognitionRef.current && !isListening) {
       try {
-        // Reset any previous errors
+        // Reset any previous errors and state
         setError(null);
         setTranscript('');
         
-        // Set restart flag for Android continuous listening
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        shouldRestartRef.current = isAndroid;
+        // Clear any existing timeout
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
         
         recognitionRef.current.start();
         console.log('Speech recognition start() called successfully');
@@ -190,7 +182,6 @@ export function useVoiceInput({
           : `音声認識を開始できませんでした: ${err}`;
         setError(errorMessage);
         setIsListening(false);
-        shouldRestartRef.current = false;
       }
     } else if (!recognitionRef.current) {
       const errorMessage = language === 'en'
@@ -203,10 +194,9 @@ export function useVoiceInput({
   }, [isListening, language]);
 
   const stopListening = useCallback(() => {
-    shouldRestartRef.current = false;
-    if (restartTimeoutRef.current) {
-      clearTimeout(restartTimeoutRef.current);
-      restartTimeoutRef.current = null;
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
     }
     if (recognitionRef.current && isListening) {
       recognitionRef.current.stop();
