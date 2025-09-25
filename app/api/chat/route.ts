@@ -40,7 +40,7 @@ function updateSessionState(sessionId: string, updates: Partial<{
 }
 
 // First AI query: Extract city name and date from user query (conversational chatbot)
-async function analyzeQuery(query: string, language: string, sessionState: Record<string, any>): Promise<{
+async function analyzeQuery(query: string, language: string, sessionState: any): Promise<{
   needsWeatherData: boolean;
   city?: string | null;
   targetDate?: string | null;
@@ -90,11 +90,16 @@ CONVERSATION CONTEXT:
 RULES:
 1. For weather queries: return needsWeatherData: true with city name and date
 2. For chat/greetings/off-topic: return needsWeatherData: false with friendly chatResponse
-3. Extract city names (don't worry about coordinates): Tokyo, Delhi, Kyoto, London, Paris, etc.
-4. Handle Japanese: 東京=Tokyo, 京都=Kyoto, 大阪=Osaka, 天気=weather, 明日=tomorrow, 昨日=yesterday
+3. Extract city names: Tokyo/東京, Delhi, Kyoto/京都, Osaka/大阪, Mumbai, London, Paris, etc.
+4. Handle Japanese: 天気=weather, 明日=tomorrow, 昨日=yesterday, 9月=September, 24日=24th
 5. If no city mentioned but Last City exists: use Last City
-6. If user says "tomorrow"/"明日": use tomorrow's date
-7. If user says "yesterday"/"昨日": use yesterday's date
+6. Date extraction:
+   - "tomorrow"/"明日" → ${tomorrowStr} (forecast)
+   - "yesterday"/"昨日" → ${yesterdayStr} (historical)
+   - "24 september"/"9月24日" → 2025-09-24 (historical if past, forecast if future)
+   - "september 24"/"24日" → 2025-09-24
+   - If no year mentioned, assume 2025
+7. Determine dateType: historical if date < today, forecast if date > today, current
 
 RESPOND WITH ONLY THIS JSON:
 {
@@ -153,10 +158,9 @@ Response: {"needsWeatherData": false, "city": null, "targetDate": null, "dateTyp
     const parsed = JSON.parse(jsonStr);
     console.log('✅ Successfully parsed JSON:', parsed);
     return parsed;
-  } catch (parseError) {
+  } catch (error) {
     console.error('❌ Failed to parse AI response as JSON');
     console.error('❌ Original response:', aiResponse);
-    console.error('❌ Parse error:', parseError);
 
     // Fallback response
     return {
@@ -210,63 +214,38 @@ async function getCoordinates(cityName: string): Promise<{
     fullName: location.name
   };
 }
-
 // Get weather data from Open-Meteo API
-async function getWeatherData(city: string, latitude: number, longitude: number, targetDate?: string, dateType?: string): Promise<Record<string, any>> {
+async function getWeatherData(
+  city: string,
+  latitude: number,
+  longitude: number,
+  targetDate?: string,
+  dateType?: string
+): Promise<any> {
   console.log('🌤️ Fetching weather data for:', city, 'at', latitude, longitude);
 
   let url: string;
   let params: URLSearchParams;
 
-  if (dateType === 'historical' && targetDate) {
-    params = new URLSearchParams({
-      latitude: latitude.toString(),
-      longitude: longitude.toString(),
-      start_date: targetDate,
-      end_date: targetDate,
-      daily: 'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
-      timezone: 'auto'
-    });
-    url = `https://archive-api.open-meteo.com/v1/archive?${params.toString()}`;
-  } else if (dateType === 'forecast' && targetDate) {
-    params = new URLSearchParams({
-      latitude: latitude.toString(),
-      longitude: longitude.toString(),
-      start_date: targetDate,
-      end_date: targetDate,
-      daily: 'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
-      timezone: 'auto'
-    });
-    url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
-  } else {
-    // Current weather
-    params = new URLSearchParams({
-      latitude: latitude.toString(),
-      longitude: longitude.toString(),
-      current: 'temperature_2m,relative_humidity_2m,precipitation,cloud_cover,wind_speed_10m,uv_index,weather_code',
-      timezone: 'auto'
-    });
-    url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
-  }
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Weather API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  // Process the weather data
-  if (dateType === 'historical' || dateType === 'forecast') {
+  // Helper to process daily response
+  function processDaily(data: any, dateType: string, targetDate?: string) {
     const daily = data.daily;
     if (!daily || !daily.time || daily.time.length === 0) {
-      throw new Error('No weather data available for the requested date');
+      return null;
     }
 
-    const dayIndex = 0;
+    // Find index of targetDate in daily.time
+    let dayIndex = 0;
+    if (targetDate && daily.time.includes(targetDate)) {
+      dayIndex = daily.time.indexOf(targetDate);
+    }
+
     const tempMax = daily.temperature_2m_max[dayIndex];
     const tempMin = daily.temperature_2m_min[dayIndex];
-    const avgTemp = (tempMax !== null && tempMin !== null) ? Math.round((tempMax + tempMin) / 2) : null;
+    const avgTemp =
+      tempMax !== null && tempMin !== null
+        ? Math.round((tempMax + tempMin) / 2)
+        : null;
 
     return {
       city,
@@ -282,30 +261,116 @@ async function getWeatherData(city: string, latitude: number, longitude: number,
       precipitation: daily.precipitation_sum[dayIndex],
       uvIndex: daily.uv_index_max[dayIndex],
       weatherCode: daily.weather_code[dayIndex],
-      timestamp: daily.time[dayIndex]
+      timestamp: daily.time[dayIndex],
     };
-  } else {
-    // Current weather
-    const current = data.current;
-    return {
-      city,
-      latitude,
-      longitude,
-      dateType: 'current',
-      temperature: Math.round(current.temperature_2m),
-      humidity: current.relative_humidity_2m,
-      windSpeed: current.wind_speed_10m,
-      precipitation: current.precipitation,
-      cloudCover: current.cloud_cover,
-      uvIndex: current.uv_index,
-      weatherCode: current.weather_code,
-      timestamp: current.time
-    };
+  }
+
+  try {
+    if (dateType === 'historical' && targetDate) {
+      // 1️⃣ First try Archive API
+      params = new URLSearchParams({
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        start_date: targetDate,
+        end_date: targetDate,
+        daily:
+          'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
+        timezone: 'auto',
+      });
+//       url = `https://archive-api.open-meteo.com/v1/archive?${params.toString()}`;
+//       console.log('📜 Historical URL:', url);
+
+//       let response = await fetch(url);
+//       if (response.ok) {
+//         let data = await response.json();
+//         let processed = processDaily(data, 'historical', targetDate);
+//         if (processed) return processed;
+//       }
+// console.log(response)
+      // 2️⃣ Fallback: Forecast API with past_days
+      params = new URLSearchParams({
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        past_days: '7', // cover last 7 days
+        daily:
+          'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
+        timezone: 'auto',
+      });
+      url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
+      console.log('🔄 Fallback Forecast URL:', url);
+
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        const processed = processDaily(data, 'historical-fallback', targetDate);
+        if (processed) return processed;
+      }
+
+      throw new Error('No weather data available for the requested historical date');
+    } 
+    else if (dateType === 'forecast' && targetDate) {
+      // Forecast for future dates
+      params = new URLSearchParams({
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        start_date: targetDate,
+        end_date: targetDate,
+        daily:
+          'temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code',
+        timezone: 'auto',
+      });
+      url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
+      console.log('🔮 Forecast URL:', url);
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Weather API error: ${response.status}`);
+
+      const data = await response.json();
+      const processed = processDaily(data, 'forecast', targetDate);
+      if (processed) return processed;
+
+      throw new Error('No weather data available for the requested forecast date');
+    } 
+    else {
+      // Current weather
+      params = new URLSearchParams({
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        current:
+          'temperature_2m,relative_humidity_2m,precipitation,cloud_cover,wind_speed_10m,uv_index,weather_code',
+        timezone: 'auto',
+      });
+      url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
+      console.log('⏳ Current URL:', url);
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Weather API error: ${response.status}`);
+
+      const data = await response.json();
+      const current = data.current;
+      return {
+        city,
+        latitude,
+        longitude,
+        dateType: 'current',
+        temperature: Math.round(current.temperature_2m),
+        humidity: current.relative_humidity_2m,
+        windSpeed: current.wind_speed_10m,
+        precipitation: current.precipitation,
+        cloudCover: current.cloud_cover,
+        uvIndex: current.uv_index,
+        weatherCode: current.weather_code,
+        timestamp: current.time,
+      };
+    }
+  } catch (error) {
+    console.error('❌ Weather fetch failed:', error);
+    throw error;
   }
 }
 
 // Second AI query: Format weather response with fashion and travel advice (conversational)
-async function formatWeatherResponse(weatherData: Record<string, any>, originalQuery: string, language: string): Promise<string> {
+async function formatWeatherResponse(weatherData: any, originalQuery: string, language: string): Promise<string> {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not found');
@@ -370,7 +435,7 @@ Make it sound like a knowledgeable friend giving helpful advice about the weathe
 
 export async function POST(req: NextRequest) {
   let language = 'en'; // Default language
-
+  
   try {
     const requestBody = await req.json();
     const { messages } = requestBody;
