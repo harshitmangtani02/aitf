@@ -174,7 +174,7 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
       {/* Weather Card */}
-      {currentWeatherData && (
+      {/* {currentWeatherData && (
         <Card className="glass animate-float shadow-xl border-primary/20">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-3 text-xl">
@@ -217,7 +217,7 @@ export function ChatInterface({ weatherData }: ChatInterfaceProps) {
             </div>
           </CardContent>
         </Card>
-      )}
+      )} */}
 
       {/* Chat Messages */}
       <Card className="glass shadow-xl border-secondary/20">
